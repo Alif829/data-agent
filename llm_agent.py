@@ -20,8 +20,9 @@ load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
 # Initialize summarization pipeline
-summarizer = pipeline('summarization',model="facebook/bart-large-cnn")
+summarizer = pipeline('summarization',model="Falconsai/text_summarization")
 
+# SERPAPI tool to collect relevant pages
 def search_relevant_pages(city: str) -> List[str]:
     query = f"{city} homicide statistics site:.gov OR site:.edu OR site:.org"
     params = {
@@ -65,29 +66,17 @@ def scrape_page(url: str) -> str:
             print(f"Error scraping {url}: {e}")
             return ""
 
+# Preprocess content to remove irrelevant text and extract important sections
+# Remove irrelevant sections such as headers, footers, legal disclaimers
 def preprocess_content(content: str) -> str:
-    """
-    Preprocess content to remove irrelevant text and extract important sections.
-
-    Parameters:
-    content (str): The raw scraped content.
-
-    Returns:
-    str: The preprocessed, cleaned content.
-    """
-    # Remove irrelevant sections such as headers, footers, legal disclaimers, etc.
-    # Using a simple keyword-based filter to eliminate common irrelevant text
     irrelevant_keywords = ["privacy policy", "terms of service", "subscribe", "cookie policy", "advertisement"]
     lines = content.split('\n')
     relevant_lines = [
         line for line in lines 
         if all(keyword.lower() not in line.lower() for keyword in irrelevant_keywords)
     ]
-
-    # Join filtered lines and apply additional regex for year-based filtering
     cleaned_content = "\n".join(relevant_lines)
 
-    # Use regex to extract sentences containing years (targeting the last 5 years)
     year_pattern = re.compile(r"\b(20[1-2][0-9])\b")  # Matches years 2010-2029
     extracted_sentences = []
     for sentence in cleaned_content.split('.'):
@@ -96,19 +85,8 @@ def preprocess_content(content: str) -> str:
 
     return ". ".join(extracted_sentences)
 
+# Summarize the content to reduce the length before sending it to the LLM
 def summarize_content(content: str, max_length: int = 150, chunk_size: int = 300) -> str:
-    """
-    Summarize the content to reduce the length before sending it to the LLM.
-
-    Parameters:
-    content (str): The content to be summarized.
-    max_length (int): The maximum length of the summary.
-    chunk_size (int): The maximum length of each chunk for summarization.
-
-    Returns:
-    str: The summarized content.
-    """
-    # Split content into smaller chunks to prevent exceeding the model's token limit
     sentences = content.split('.')
     chunks = []
     current_chunk = []
@@ -138,7 +116,7 @@ def summarize_content(content: str, max_length: int = 150, chunk_size: int = 300
 
 
 def process_with_llm(content: str, city: str, num_years: int = 5) -> List[dict]:
-    # Preprocess the content to reduce token count
+    # reduce token count
     preprocessed_content = preprocess_content(content)
 
     # Summarize the content to further reduce token usage
@@ -172,7 +150,6 @@ def process_with_llm(content: str, city: str, num_years: int = 5) -> List[dict]:
                     count = int(parts[1].strip())
                     all_data.append({"Year": year, "Homicide Count": count})
                 except ValueError:
-                    # Log the line that caused an error and continue
                     print(f"Skipping line due to ValueError: {line}")
                     continue
             else:
@@ -208,7 +185,7 @@ def collect_homicide_data(cities: List[str], num_years: int = 5) -> pd.DataFrame
                 structured_data = process_with_llm(page_content, city, num_years)
                 if structured_data:
                     city_data.extend(structured_data)
-                    break  # Stop after finding the first valid page
+                    break 
 
         if city_data:
             for record in city_data:
@@ -222,7 +199,7 @@ def main():
     homicide_data = collect_homicide_data(cities, num_years)
     if not homicide_data.empty:
         print(homicide_data)
-        homicide_data.to_csv("homicide_statistics_3.csv", index=False)
+        homicide_data.to_csv("homicide_statistics.csv", index=False)
     else:
         print("No data available to save.")
 
